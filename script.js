@@ -1,228 +1,177 @@
+/* ===== CONFIG ===== */
 const ROWS = 6;
 const COLS = 5;
+const DAY_KEY = "panow-day-played";
 
-let board = [];
-let row = 0;
-let col = 0;
+let currentRow = 0;
+let currentCol = 0;
+let grid = [];
 let gameOver = false;
-let secret = "";
+let answer = "";
 let emojiGrid = [];
 
-const boardEl = document.getElementById("board");
-const keyboardEl = document.getElementById("keyboard");
-const message = document.getElementById("message");
-const shareBtn = document.getElementById("shareBtn");
-const statsBtn = document.getElementById("statsBtn");
-const statsModal = document.getElementById("statsModal");
-const statsDiv = document.getElementById("stats");
+/* ===== DAY INDEX ===== */
+function getDayIndex() {
+  const start = new Date("2024-01-01");
+  const today = new Date();
+  return Math.floor((today - start) / 86400000);
+}
 
-const keyStates = {};
+const todayIndex = getDayIndex();
 
-const startDate = new Date("2024-01-01");
-const today = new Date();
-const dayIndex = Math.floor((today - startDate) / 86400000);
-const todayKey = `panow-${dayIndex}`;
+/* ===== DAILY LOCK ===== */
+if (localStorage.getItem(DAY_KEY) == todayIndex) {
+  gameOver = true;
+  setTimeout(() => document.getElementById("statsModal").classList.add("show"), 300);
+}
 
-/* ---------- STATS ---------- */
-let stats = JSON.parse(localStorage.getItem("panow-stats")) || {
-  played: 0,
-  wins: 0,
-  streak: 0,
-  maxStreak: 0,
-  guessDist: [0,0,0,0,0,0]
-};
-
-/* ---------- LOAD WORD ---------- */
+/* ===== LOAD WORD ===== */
 fetch("words.txt")
-  .then(res => res.text())
+  .then(r => r.text())
   .then(text => {
-    const words = text.trim().split("\n");
-    secret = words[dayIndex % words.length].toLowerCase();
-    init();
+    const words = text.split("\n").map(w => w.trim()).filter(w => w.length === 5);
+    answer = words[todayIndex % words.length].toUpperCase();
   });
 
-function init() {
-  if (localStorage.getItem(todayKey)) {
-    message.textContent = "You already played today’s PanOW";
-    gameOver = true;
-    shareBtn.hidden = false;
-  }
-
-  createBoard();
-  createKeyboard();
-}
-
-/* ---------- BOARD ---------- */
-function createBoard() {
-  for (let r = 0; r < ROWS; r++) {
-    const rowEl = document.createElement("div");
-    rowEl.className = "row";
-    board[r] = [];
-    for (let c = 0; c < COLS; c++) {
-      const tile = document.createElement("div");
-      tile.className = "tile";
-      rowEl.appendChild(tile);
-      board[r][c] = tile;
-    }
-    boardEl.appendChild(rowEl);
+/* ===== GRID ===== */
+const gridEl = document.getElementById("grid");
+for (let r = 0; r < ROWS; r++) {
+  grid[r] = [];
+  for (let c = 0; c < COLS; c++) {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    gridEl.appendChild(tile);
+    grid[r][c] = tile;
   }
 }
 
-/* ---------- KEYBOARD ---------- */
-const keys = [
-  ..."qwertyuiop",
-  ..."asdfghjkl",
-  "Enter",
-  ..."zxcvbnm",
-  "⌫"
+/* ===== KEYBOARD ===== */
+const keyboardLayout = [
+  ["Q","W","E","R","T","Y","U","I","O","P"],
+  ["A","S","D","F","G","H","J","K","L"],
+  ["ENTER","Z","X","C","V","B","N","M","⌫"]
 ];
 
-function createKeyboard() {
-  keys.forEach(k => {
+const keyboardEl = document.getElementById("keyboard");
+const keyMap = {};
+
+keyboardLayout.forEach(row => {
+  const rowEl = document.createElement("div");
+  rowEl.className = "key-row";
+
+  row.forEach(k => {
     const key = document.createElement("div");
     key.className = "key";
     key.textContent = k;
-    if (k === "Enter" || k === "⌫") key.classList.add("wide");
-    key.onclick = () => handleKey(k);
-    keyboardEl.appendChild(key);
-  });
-}
 
-/* ---------- INPUT ---------- */
-document.addEventListener("keydown", e => {
-  if (gameOver) return;
-  if (e.key === "Enter") submit();
-  else if (e.key === "Backspace") backspace();
-  else if (/^[a-zA-Z]$/.test(e.key)) handleKey(e.key);
+    if (k === "ENTER") key.onclick = submitGuess;
+    else if (k === "⌫") key.onclick = backspace;
+    else {
+      key.onclick = () => handleKey(k);
+      keyMap[k] = key;
+    }
+
+    rowEl.appendChild(key);
+  });
+
+  keyboardEl.appendChild(rowEl);
 });
 
-function handleKey(k) {
+/* ===== INPUT ===== */
+document.addEventListener("keydown", e => {
   if (gameOver) return;
-  if (k === "Enter") return submit();
-  if (k === "⌫") return backspace();
-  if (col < COLS) {
-    board[row][col].textContent = k.toUpperCase();
-    col++;
+  if (/^[a-z]$/i.test(e.key)) handleKey(e.key.toUpperCase());
+  if (e.key === "Backspace") backspace();
+  if (e.key === "Enter") submitGuess();
+});
+
+function handleKey(l) {
+  if (currentCol < COLS) {
+    grid[currentRow][currentCol].textContent = l;
+    currentCol++;
   }
 }
 
 function backspace() {
-  if (col > 0) {
-    col--;
-    board[row][col].textContent = "";
+  if (currentCol > 0) {
+    currentCol--;
+    grid[currentRow][currentCol].textContent = "";
   }
 }
 
-/* ---------- SUBMIT ---------- */
-function submit() {
-  if (col < COLS) return;
+function submitGuess() {
+  if (currentCol < COLS || !answer) return;
 
-  const guess = board[row].map(t => t.textContent.toLowerCase());
-  const temp = secret.split("");
-  let emojiRow = "";
+  const guess = grid[currentRow].map(t => t.textContent).join("");
+  evaluateGuess(guess);
 
-  // Correct
-  guess.forEach((l, i) => {
-    if (l === temp[i]) {
-      board[row][i].classList.add("correct", "flip");
-      updateKey(l, "correct");
-      temp[i] = null;
-      emojiRow += "🟩";
-    }
-  });
-
-  // Present / Absent
-  guess.forEach((l, i) => {
-    if (board[row][i].classList.contains("correct")) return;
-    if (temp.includes(l)) {
-      board[row][i].classList.add("present", "flip");
-      updateKey(l, "present");
-      temp[temp.indexOf(l)] = null;
-      emojiRow += "🟨";
-    } else {
-      board[row][i].classList.add("absent", "flip");
-      updateKey(l, "absent");
-      emojiRow += "⬛";
-    }
-  });
-
-  emojiGrid.push(emojiRow);
-
-  if (guess.join("") === secret) return endGame(true);
-  row++;
-  col = 0;
-  if (row === ROWS) endGame(false);
-}
-
-/* ---------- KEY COLORS ---------- */
-function updateKey(letter, state) {
-  const priority = { absent: 1, present: 2, correct: 3 };
-  if (keyStates[letter] && priority[keyStates[letter]] >= priority[state]) return;
-  keyStates[letter] = state;
-
-  document.querySelectorAll(".key").forEach(k => {
-    if (k.textContent === letter) {
-      k.classList.remove("correct", "present", "absent");
-      k.classList.add(state);
-    }
-  });
-}
-
-/* ---------- END GAME ---------- */
-function endGame(win) {
-  gameOver = true;
-  stats.played++;
-
-  if (win) {
-    message.textContent = "You Win!";
-    stats.wins++;
-    stats.streak++;
-    stats.maxStreak = Math.max(stats.streak, stats.maxStreak);
-    stats.guessDist[row]++;
-  } else {
-    message.textContent = `Word was: ${secret.toUpperCase()}`;
-    stats.streak = 0;
+  if (guess === answer || currentRow === ROWS - 1) {
+    gameOver = true;
+    localStorage.setItem(DAY_KEY, todayIndex);
+    setTimeout(showStats, 1800);
   }
 
-  localStorage.setItem("panow-stats", JSON.stringify(stats));
-  localStorage.setItem(todayKey, JSON.stringify({ done: true }));
-  shareBtn.hidden = false;
+  currentRow++;
+  currentCol = 0;
 }
 
-/* ---------- SHARE ---------- */
-shareBtn.onclick = () => {
-  const text = `PanOW ${row + 1}/6\n` + emojiGrid.join("\n");
-  navigator.clipboard.writeText(text);
-  alert("Copied to clipboard!");
-};
+/* ===== FLIP + EVALUATE ===== */
+function evaluateGuess(guess) {
+  const result = Array(COLS).fill("⬛");
+  const ans = answer.split("");
 
-/* ---------- STATS ---------- */
-statsBtn.onclick = () => {
-  renderStats();
-  statsModal.classList.remove("hidden");
-};
+  for (let i = 0; i < COLS; i++) {
+    if (guess[i] === ans[i]) {
+      result[i] = "🟩";
+      ans[i] = null;
+    }
+  }
 
-function closeStats() {
-  statsModal.classList.add("hidden");
-}
+  for (let i = 0; i < COLS; i++) {
+    if (result[i] === "⬛") {
+      const idx = ans.indexOf(guess[i]);
+      if (idx !== -1) {
+        result[i] = "🟨";
+        ans[idx] = null;
+      }
+    }
+  }
 
-function renderStats() {
-  statsDiv.innerHTML = `
-    Played: ${stats.played}<br>
-    Wins: ${stats.wins}<br>
-    Streak: ${stats.streak}<br>
-    Max Streak: ${stats.maxStreak}<br><br>
-    Guess Distribution:
-  `;
+  emojiGrid.push(result.join(""));
 
-  stats.guessDist.forEach((n, i) => {
-    const bar = document.createElement("div");
-    bar.style.background = "#538d4e";
-    bar.style.margin = "4px 0";
-    bar.style.height = "18px";
-    bar.style.width = `${10 + n * 20}px`;
-    bar.textContent = `${i + 1}  ${n}`;
-    bar.style.paddingLeft = "6px";
-    statsDiv.appendChild(bar);
+  result.forEach((r, i) => {
+    const tile = grid[currentRow][i];
+    const key = keyMap[guess[i]];
+
+    setTimeout(() => {
+      tile.classList.add("flip");
+      setTimeout(() => {
+        tile.classList.remove("flip");
+        tile.classList.add(
+          r === "🟩" ? "correct" : r === "🟨" ? "present" : "absent"
+        );
+        if (key) key.classList.add(
+          r === "🟩" ? "correct" : r === "🟨" ? "present" : "absent"
+        );
+      }, 300);
+    }, i * 300);
   });
 }
+
+/* ===== STATS + SHARE ===== */
+const statsModal = document.getElementById("statsModal");
+document.getElementById("statsBtn").onclick = () => statsModal.classList.add("show");
+document.getElementById("closeStats").onclick = () => statsModal.classList.remove("show");
+
+function showStats() {
+  document.getElementById("stats").innerText =
+    `PanOW ${currentRow + 1}/6`;
+  statsModal.classList.add("show");
+}
+
+document.getElementById("shareBtn").onclick = () => {
+  navigator.clipboard.writeText(
+    `PanOW ${currentRow + 1}/6\n${emojiGrid.join("\n")}`
+  );
+  alert("Copied!");
+};

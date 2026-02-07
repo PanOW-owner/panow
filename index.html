@@ -8,29 +8,24 @@
 </head>
 <body>
 
-  <header>
-    <h1>PanOW</h1>
-    <button id="statsBtn">📊</button>
-  </header>
+<header>
+  <h1>PanOW</h1>
+  <button id="statsBtn">📊</button>
+</header>
 
-  <main>
-    <div id="board"></div>
+<div id="grid"></div>
+<div id="keyboard"></div>
 
-    <div id="keyboard"></div>
-
-    <p id="message"></p>
-
-    <button id="shareBtn" hidden>Share</button>
-  </main>
-
-  <div id="statsModal" class="hidden">
-    <div class="modal">
-      <h2>Statistics</h2>
-      <div id="stats"></div>
-      <button onclick="closeStats()">Close</button>
-    </div>
+<!-- Stats Modal -->
+<div id="statsModal">
+  <div class="modal">
+    <h2>Statistics</h2>
+    <div id="stats"></div>
+    <button id="shareBtn">Share Result</button>
+    <button id="closeStats">Close</button>
   </div>
+</div>
 
-  <script src="script.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
